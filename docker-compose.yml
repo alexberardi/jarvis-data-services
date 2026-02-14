@@ -68,6 +68,8 @@ services:
       - "${REDIS_COMMANDER_PORT}:8081"
     depends_on:
       - redis
+    profiles:
+      - tools
 
 volumes:
   postgres_data:
