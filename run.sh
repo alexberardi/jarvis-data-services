@@ -10,4 +10,5 @@ if [[ ! -f "$ENV_FILE" ]]; then
 fi
 
 cd "$SCRIPT_DIR"
+docker compose --env-file "$ENV_FILE" down
 docker compose --env-file "$ENV_FILE" up -d

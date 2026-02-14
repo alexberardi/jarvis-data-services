@@ -1,7 +1,7 @@
 services:
   postgres:
     image: postgres:16
-    container_name: data-services-postgres
+    container_name: jarvis-postgres
     restart: unless-stopped
     env_file:
       - data-services.env
@@ -16,7 +16,7 @@ services:
 
   pgadmin:
     image: dpage/pgadmin4:8
-    container_name: data-services-pgadmin
+    container_name: jarvis-pgadmin
     restart: unless-stopped
     env_file:
       - data-services.env
@@ -30,7 +30,7 @@ services:
 
   minio:
     image: minio/minio:latest
-    container_name: data-services-minio
+    container_name: jarvis-minio
     restart: unless-stopped
     env_file:
       - data-services.env
@@ -46,7 +46,7 @@ services:
 
   redis:
     image: redis:7
-    container_name: data-services-redis
+    container_name: jarvis-redis
     restart: unless-stopped
     command: redis-server --requirepass ${REDIS_PASSWORD} --port ${REDIS_PORT}
     env_file:
@@ -58,7 +58,7 @@ services:
 
   redis-commander:
     image: rediscommander/redis-commander:latest
-    container_name: data-services-redis-commander
+    container_name: jarvis-redis-commander
     restart: unless-stopped
     env_file:
       - data-services.env
