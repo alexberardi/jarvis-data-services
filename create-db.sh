@@ -24,7 +24,7 @@ set -a
 source "$ENV_FILE"
 set +a
 
-EXISTS="$(docker compose exec -T postgres \
+EXISTS="$(docker compose --env-file "$ENV_FILE" exec -T postgres \
   env PGPASSWORD="${POSTGRES_PASSWORD}" \
   psql -U "${POSTGRES_USER}" -d postgres -tAc \
   "SELECT 1 FROM pg_database WHERE datname='${DB_NAME}'")"
@@ -34,7 +34,7 @@ if [[ "$EXISTS" == "1" ]]; then
   exit 0
 fi
 
-docker compose exec -T postgres \
+docker compose --env-file "$ENV_FILE" exec -T postgres \
   env PGPASSWORD="${POSTGRES_PASSWORD}" \
   psql -U "${POSTGRES_USER}" -d postgres -v ON_ERROR_STOP=1 -c \
   "CREATE DATABASE \"${DB_NAME}\";"
