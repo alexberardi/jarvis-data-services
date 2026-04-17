@@ -71,6 +71,22 @@ services:
     profiles:
       - tools
 
+  go2rtc:
+    image: alexxit/go2rtc
+    container_name: jarvis-go2rtc
+    restart: unless-stopped
+    volumes:
+      - ./go2rtc.yaml:/config/go2rtc.yaml
+    networks:
+      - default
+      - jarvis-net
+    profiles:
+      - cameras
+
+networks:
+  jarvis-net:
+    external: true
+
 volumes:
   postgres_data:
   minio_data:
