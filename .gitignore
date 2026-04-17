@@ -1,5 +1,6 @@
 .DS_Store
 .env
+.env.*
 *.log
 
 # Local docker data if ever switched to bind mounts

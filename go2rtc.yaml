@@ -1,0 +1,4 @@
+api:
+  listen: ":1984"
+
+streams: {}
