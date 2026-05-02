@@ -80,8 +80,6 @@ services:
     networks:
       - default
       - jarvis-net
-    profiles:
-      - cameras
 
 networks:
   jarvis-net:
