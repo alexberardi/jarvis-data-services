@@ -1,4 +1,15 @@
 api:
   listen: ":1984"
 
+# WebRTC is needed as a SOURCE too (e.g. the nest: battery-doorbell stream, which
+# is WebRTC-only). In a bridged Docker network go2rtc has no reachable ICE
+# candidate on its own, so media never arrives — add STUN so it discovers a
+# public candidate. `stun:8555` = "use STUN to resolve my public IP for port 8555".
+webrtc:
+  listen: ":8555"
+  candidates:
+    - stun:8555
+  ice_servers:
+    - urls: [ "stun:stun.l.google.com:19302" ]
+
 streams: {}

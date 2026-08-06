@@ -77,6 +77,11 @@ services:
     restart: unless-stopped
     volumes:
       - ./go2rtc.yaml:/config/go2rtc.yaml
+    # Publish the WebRTC media port so STUN-discovered candidates are reachable
+    # (required for WebRTC-only sources like the nest: battery doorbell).
+    ports:
+      - "8555:8555/tcp"
+      - "8555:8555/udp"
     networks:
       - default
       - jarvis-net
