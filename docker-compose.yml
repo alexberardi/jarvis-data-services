@@ -86,6 +86,49 @@ services:
       - default
       - jarvis-net
 
+  # MQTT broker. CLAUDE.md lists Mosquitto as shared infra and ./jarvis registers
+  # jarvis-mqtt-broker at mqtt://<host>:1884, but nothing here actually ran one —
+  # so every MQTT path silently timed out (the app spins on "Loading tools…"
+  # because GET /nodes/{id}/tools asks the node over MQTT with a 10s timeout).
+  #
+  # Mirrors jarvis-installer/src/lib/compose-export-generator.ts so a source dev
+  # stack and an installer stack behave the same, including its two documented
+  # gotchas: `rm -f` because mosquitto_passwd -c refuses an existing file on
+  # restart, and `chown` because mosquitto drops privileges before reading the
+  # password file and crash-loops on a root-owned 0600 pwfile.
+  #
+  # allow_anonymous stays false (the installer's default) — command-center reads
+  # MQTT_PASSWORD from its env and nodes fetch the shared credential over
+  # authenticated HTTP (/api/v0/node/mqtt-credentials) before connecting, so
+  # there is no anonymous client to strand.
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: jarvis-mosquitto
+    restart: unless-stopped
+    environment:
+      MQTT_USERNAME: "${MQTT_USERNAME:-jarvis}"
+      MQTT_PASSWORD: "${MQTT_PASSWORD}"
+      MQTT_ALLOW_ANON: "${MQTT_ALLOW_ANON:-false}"
+    command:
+      - sh
+      - -c
+      - |
+        rm -f /tmp/pwfile
+        mosquitto_passwd -b -c /tmp/pwfile "$$MQTT_USERNAME" "$$MQTT_PASSWORD"
+        chown mosquitto:mosquitto /tmp/pwfile
+        echo 'listener 1883' > /tmp/mosquitto.conf
+        echo 'protocol mqtt' >> /tmp/mosquitto.conf
+        echo 'listener 9001' >> /tmp/mosquitto.conf
+        echo 'protocol websockets' >> /tmp/mosquitto.conf
+        echo "allow_anonymous $$MQTT_ALLOW_ANON" >> /tmp/mosquitto.conf
+        echo 'password_file /tmp/pwfile' >> /tmp/mosquitto.conf
+        exec mosquitto -c /tmp/mosquitto.conf -v
+    ports:
+      - "${MQTT_PORT:-1884}:1883"
+      - "${MQTT_WS_PORT:-9883}:9001"
+    volumes:
+      - mosquitto_data:/mosquitto/data
+
 networks:
   jarvis-net:
     external: true
@@ -94,3 +137,4 @@ volumes:
   postgres_data:
   minio_data:
   redis_data:
+  mosquitto_data:
