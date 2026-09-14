@@ -29,7 +29,12 @@ services:
       - postgres
 
   minio:
-    image: minio/minio:latest
+    # quay.io, pinned: MinIO deleted its Docker Hub repositories, and the
+    # nightly quickstart lane has failed on "pull access denied for
+    # minio/minio" ever since. A release tag rather than :latest because the
+    # day BEFORE they disappeared a new :latest broke the bucket one-shot --
+    # the same outage twice, from following a tag we do not control.
+    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
     container_name: jarvis-minio
     restart: unless-stopped
     env_file:
