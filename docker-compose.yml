@@ -148,11 +148,61 @@ services:
       - default
       - jarvis-net
 
+  # MQTT broker for node communication. The ./jarvis CLI REGISTERS
+  # jarvis-mqtt-broker at mqtt://localhost:1884 in config-service but never ran
+  # one, so every MQTT path failed by timeout -- most visibly the mobile app
+  # spinning on "Loading tools..." because GET /nodes/{id}/tools asks the node
+  # over MQTT. install-e2e/quickstart asserts a mosquitto container exists
+  # precisely because of that gap (found 2026-09-01).
+  #
+  # The startup script mirrors the installer's generator
+  # (jarvis-installer/src/lib/compose-export-generator.ts) rather than inventing
+  # a second shape. Two lines there are load-bearing:
+  #   - `rm -f`, because `mosquitto_passwd -c` REFUSES an existing file on 2.1+,
+  #     so without it a restart crash-loops.
+  #   - `chown`, because mosquitto drops to the mosquitto user BEFORE reading the
+  #     password file, and a root-owned 0600 pwfile crash-loops a fresh install.
+  #
+  # allow_anonymous defaults FALSE, closing the anonymous-broker window from
+  # first boot: nodes fetch broker credentials over authenticated HTTP from
+  # command-center, so there is no anonymous client to strand.
+  mosquitto:
+    image: eclipse-mosquitto:2.0
+    container_name: jarvis-mosquitto
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      MQTT_USERNAME: "jarvis"
+      MQTT_PASSWORD: ${MQTT_PASSWORD}
+      MQTT_ALLOW_ANON: ${MQTT_ALLOW_ANON:-false}
+    ports:
+      - "${MQTT_PORT:-1884}:1883"
+      - "${MQTT_WS_PORT:-9883}:9001"
+    # `$$` is compose's escape: the container shell expands these, not compose.
+    command:
+      - sh
+      - -c
+      - |
+        rm -f /tmp/pwfile
+        mosquitto_passwd -b -c /tmp/pwfile "$$MQTT_USERNAME" "$$MQTT_PASSWORD"
+        chown mosquitto:mosquitto /tmp/pwfile
+        echo 'listener 1883' > /tmp/mosquitto.conf
+        echo 'protocol mqtt' >> /tmp/mosquitto.conf
+        echo 'listener 9001' >> /tmp/mosquitto.conf
+        echo 'protocol websockets' >> /tmp/mosquitto.conf
+        echo "allow_anonymous $$MQTT_ALLOW_ANON" >> /tmp/mosquitto.conf
+        echo 'password_file /tmp/pwfile' >> /tmp/mosquitto.conf
+        exec mosquitto -c /tmp/mosquitto.conf -v
+    volumes:
+      - mosquitto_data:/mosquitto/data
+
 networks:
   jarvis-net:
     external: true
 
 volumes:
+  mosquitto_data:
   postgres_data:
   seaweedfs_data:
   redis_data:
