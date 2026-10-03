@@ -28,26 +28,86 @@ services:
     depends_on:
       - postgres
 
-  minio:
-    # quay.io, pinned: MinIO deleted its Docker Hub repositories, and the
-    # nightly quickstart lane has failed on "pull access denied for
-    # minio/minio" ever since. A release tag rather than :latest because the
-    # day BEFORE they disappeared a new :latest broke the bucket one-shot --
-    # the same outage twice, from following a tag we do not control.
-    image: quay.io/minio/minio:RELEASE.2025-09-07T16-13-09Z
-    container_name: jarvis-minio
+  # S3-compatible object store. Was MinIO, which is no longer installable at all:
+  # MinIO archived its OSS project, deleted its Docker Hub repositories, and the
+  # quay.io namespace that #2 pinned to has since gone private too -- the
+  # quickstart lane fails on "minio Error unauthorized: access to the requested
+  # resource is not authorized" and `docker compose up` aborts ATOMICALLY, so
+  # Postgres and Redis never start either. That is the whole reason
+  # install-e2e-quickstart has been red: 12 of its 13 failures are services
+  # crash-looping with no database.
+  #
+  # Pinned by DIGEST, not a tag. #2's comment already names the lesson -- "the
+  # same outage twice, from following a tag we do not control" -- and a release
+  # tag still leaves the registry free to withdraw it. A digest cannot move.
+  seaweedfs:
+    image: chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    container_name: jarvis-seaweedfs
     restart: unless-stopped
     env_file:
       - .env
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
-    command: server /data --console-address ":${MINIO_CONSOLE_PORT}"
+      OBJECT_STORE_ACCESS_KEY: ${OBJECT_STORE_ACCESS_KEY}
+      OBJECT_STORE_SECRET_KEY: ${OBJECT_STORE_SECRET_KEY}
+    # `-s3.config` takes a FILE PATH, not env vars, so the identity file is
+    # written from the generated secrets before exec. `$$` is compose's escape:
+    # the SHELL expands these, not compose. A literal block, not a folded
+    # scalar -- folding joins the lines with spaces and breaks the script.
+    #
+    # -volume.max is NOT optional. It defaults to 8, SeaweedFS makes a volume
+    # collection PER BUCKET and grows them 7 at a time, so a single-node install
+    # runs out of slots and every PutObject returns InternalError ("No writable
+    # volumes ... Not enough data nodes found!"). `-volume.max=0` is worse than
+    # it reads: it auto-sizes from free disk / volume size and resolved to 2
+    # inside a container. Verified 2026-10-01 -- 8 of 9 objects failed until set.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /etc/seaweedfs
+        cat > /etc/seaweedfs/s3.json <<CFG
+        {"identities":[{"name":"jarvis","credentials":[{"accessKey":"$$OBJECT_STORE_ACCESS_KEY","secretKey":"$$OBJECT_STORE_SECRET_KEY"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
+        CFG
+        exec weed server -dir=/data -s3 -s3.config=/etc/seaweedfs/s3.json -volume.max=64 -master.volumeSizeLimitMB=1024
     ports:
-      - "${MINIO_PORT}:${MINIO_PORT}"
-      - "${MINIO_CONSOLE_PORT}:${MINIO_CONSOLE_PORT}"
+      - "${SEAWEEDFS_PORT:-8333}:8333"
     volumes:
-      - minio_data:/data
+      - seaweedfs_data:/data
+
+  # Creates the buckets services upload to. The S3 API does NOT create a bucket
+  # on first write, and nothing else in the stack creates them -- recipes and
+  # ocr-service both assume theirs exists. Before this, a fresh stack left the
+  # operator to create it by hand, and forgetting looked like an application
+  # bug: the store is healthy, the API answers 200, and every photo import fails.
+  #
+  # Runs the SAME image as the store (`weed shell` ships in it), so there is no
+  # second image to keep alive -- the old MinIO setup needed `mc`, whose Docker
+  # Hub repo vanished a day after the server's did.
+  #
+  # `s3.bucket.create` prints "already exists" and STILL EXITS 0, so it is safe
+  # on every `up` -- but the exit code proves nothing either way, hence the
+  # explicit s3.bucket.list check. Without it this goes green having created
+  # nothing.
+  seaweedfs-init:
+    image: chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    container_name: jarvis-seaweedfs-init
+    depends_on:
+      - seaweedfs
+    env_file:
+      - .env
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until echo "s3.bucket.list" | weed shell -master=seaweedfs:9333 >/dev/null 2>&1; do
+          sleep 2
+        done
+        for b in $$(echo "$${OBJECT_STORE_BUCKETS:-jarvis-dev}" | tr ',' ' '); do
+          echo "s3.bucket.create -name $$b" | weed shell -master=seaweedfs:9333
+          echo "s3.bucket.list" | weed shell -master=seaweedfs:9333 | grep -q "$$b" \
+            || { echo "bucket $$b missing after create"; exit 1; }
+          echo "bucket ready: $$b"
+        done
+    # It does its work and exits 0; unless-stopped would recreate it forever.
+    restart: on-failure
 
   redis:
     image: redis:7
@@ -140,6 +200,6 @@ networks:
 
 volumes:
   postgres_data:
-  minio_data:
+  seaweedfs_data:
   redis_data:
   mosquitto_data:
