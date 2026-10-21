@@ -1,5 +1,10 @@
 # jarvis-data-services
 
+> [!WARNING]
+> **Deprecated: replaced by jarvisd.** This was the old stack's shared infrastructure (Postgres, Redis, MinIO, MQTT). jarvisd keeps its own data and runs its own MQTT broker. New installs: [installer.jarvisautomation.io](https://installer.jarvisautomation.io). Moving an existing install: [Migrating from the Docker install](https://docs.jarvisautomation.dev/install/migrating-from-docker/).
+>
+> The old stack stays supported, with fixes only, until jarvisd v0.1.0. This repository will be archived after that; published images and packages stay available for existing installs.
+
 Shared data infrastructure for the Jarvis stack. This is **not a running
 service** — it is a Docker Compose bundle that brings up the databases, cache,
 and object storage that the other Jarvis services depend on.
