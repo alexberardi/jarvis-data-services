@@ -28,6 +28,41 @@ services:
     depends_on:
       - postgres
 
+  seaweedfs:
+    # Replaces MinIO, which archived its OSS project and closed every
+    # distribution channel (prds/minio-eol-object-store.md). Pinned by DIGEST
+    # rather than a tag -- the 2026-09-11 breakage was an unpinned :latest
+    # changing behaviour under us, and a digest cannot move at all.
+    image: chrislusf/seaweedfs@sha256:4e61d15fd35994cb1e43e1e553dff106794841fd9a99ade2fc8c8bfce4d7872d
+    container_name: jarvis-seaweedfs
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      OBJECT_STORE_ACCESS_KEY: ${OBJECT_STORE_ACCESS_KEY}
+      OBJECT_STORE_SECRET_KEY: ${OBJECT_STORE_SECRET_KEY}
+    # `-s3.config` takes a file path, not env vars, so the identity file is
+    # written from the generated secrets before exec. `$$` = shell, not compose.
+    #
+    # -volume.max is NOT optional: it defaults to 8, SeaweedFS makes a volume
+    # collection per bucket and grows them 7 at a time, so a single node runs
+    # out of slots and every PutObject returns InternalError. `0` auto-sizes
+    # from free disk and resolved to 2 in a container. Verified 2026-10-01.
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        mkdir -p /etc/seaweedfs
+        cat > /etc/seaweedfs/s3.json <<CFG
+        {"identities":[{"name":"jarvis","credentials":[{"accessKey":"$$OBJECT_STORE_ACCESS_KEY","secretKey":"$$OBJECT_STORE_SECRET_KEY"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
+        CFG
+        exec weed server -dir=/data -s3 -s3.config=/etc/seaweedfs/s3.json -volume.max=64 -master.volumeSizeLimitMB=1024
+    ports:
+      - "${SEAWEEDFS_PORT:-8333}:8333"
+    volumes:
+      - seaweedfs_data:/data
+    networks:
+      - default
+
   minio:
     # quay.io, pinned: MinIO deleted its Docker Hub repositories, and the
     # nightly quickstart lane has failed on "pull access denied for
@@ -139,6 +174,7 @@ networks:
     external: true
 
 volumes:
+  seaweedfs_data:
   postgres_data:
   minio_data:
   redis_data:
